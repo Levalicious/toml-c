@@ -71,7 +71,6 @@ struct toml_value_t {
 	union {
 		toml_timestamp_t *ts; // datetime; must be freed after use.
 		char             *s;  // string value; must be freed after use
-		int              sl;  // string length, excluding NULL.
 		bool             b;   // bool value
 		int64_t          i;   // int value
 		double           d;   // double value
@@ -2036,7 +2035,8 @@ int toml_value_string(toml_unparsed_t src, char **ret, int *len) {
 toml_value_t toml_array_string(const toml_array_t *arr, int idx) {
 	toml_value_t ret;
 	memset(&ret, 0, sizeof(ret));
-	ret.ok = (toml_value_string(toml_array_unparsed(arr, idx), &ret.u.s, &ret.u.sl) == 0);
+	int sl;
+	ret.ok = (toml_value_string(toml_array_unparsed(arr, idx), &ret.u.s, &sl) == 0);
 	return ret;
 }
 
@@ -2078,8 +2078,10 @@ toml_value_t toml_table_string(const toml_table_t *tbl, const char *key) {
 	toml_value_t ret;
 	memset(&ret, 0, sizeof(ret));
 	toml_unparsed_t raw = toml_table_unparsed(tbl, key);
-	if (raw)
-		ret.ok = (toml_value_string(raw, &ret.u.s, &ret.u.sl) == 0);
+	if (raw) {
+		int sl;
+		ret.ok = (toml_value_string(raw, &ret.u.s, &sl) == 0);
+	}
 	return ret;
 }
 
