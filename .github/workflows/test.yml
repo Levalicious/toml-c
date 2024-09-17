@@ -1,18 +1,22 @@
-name: 'test'
+name: Test
 on:   ['push', 'pull_request']
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        #os:       ['ubuntu-latest', 'macos-latest', 'windows-latest']
         os:       ['ubuntu-latest', 'macos-latest']
-        compiler: ['clang']
+        compiler: ['gcc', 'clang']
         go:       ['1.21']
     runs-on: ${{ matrix.os }}
-
     steps:
-    - uses: actions/checkout@v3
-    - run: |
+    - uses: actions/checkout@v4.1.7
+    - uses: actions/setup-go@v5.0.2
+      with:
+        go-version: ${{ matrix.go }}
+    - name: Install toml-test
+      run: |
         go install github.com/toml-lang/toml-test/cmd/toml-test@master
-        make check CC=clang
+    - name: Run tests
+      run: |
+        make check CC=${{ matrix.compiler }}

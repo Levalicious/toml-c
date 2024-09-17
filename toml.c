@@ -997,7 +997,10 @@ static int walk_tabpath(context_t *ctx) {
 		toml_array_t *nextarr = 0;
 		toml_table_t *nexttab = 0;
 		switch (check_key(curtab, key, &nextval, &nextarr, &nexttab)) {
-			case 't': /// found a table. nexttab is where we will go next.
+			case 't': /// found a table. nexttab is where we will go next.)
+				// Next table is inline/readonly, so we can't go further.
+				if (nexttab->readonly)
+					return e_internal(ctx, FLINE);
 				break;
 			case 'a': /// found an array. nexttab is the last table in the array.
 				if (nextarr->kind != 't')
