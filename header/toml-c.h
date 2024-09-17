@@ -86,8 +86,10 @@ struct toml_timestamp_t {
 	char kind;
 	int year, month, day;
 	int hour, minute, second, millisec;
-	char z[10];
-	bool zdef;
+	struct {
+		char def;
+		int hour, minute;
+	} z;
 };
 
 // toml_parse() parses a TOML document from a string. Returns 0 on error, with
@@ -152,7 +154,7 @@ static void *CALLOC(size_t nmemb, size_t sz) {
 #define strdup(x) error - forbidden - use STRDUP instead
 static char *STRDUP(const char *s) {
 	int len = strlen(s);
-	char *p = (char*) malloc(len + 1);
+	char *p = malloc(len + 1);
 	if (p) {
 		memcpy(p, s, len);
 		p[len] = 0;
@@ -165,7 +167,7 @@ static char *STRDUP(const char *s) {
 #define strndup(x) error - forbidden - use STRNDUP instead
 static char *STRNDUP(const char *s, size_t n) {
 	size_t len = strnlen(s, n);
-	char *p = (char*) malloc(len + 1);
+	char *p = malloc(len + 1);
 	if (p) {
 		memcpy(p, s, len);
 		p[len] = 0;
@@ -332,7 +334,7 @@ static void *expand(void *p, int sz, int newsz) {
 }
 
 static void **expand_ptrarr(void **p, int n) {
-	void **s = (void**) malloc((n + 1) * sizeof(void *));
+	void **s = malloc((n + 1) * sizeof(void *));
 	if (!s)
 		return 0;
 
@@ -345,7 +347,7 @@ static void **expand_ptrarr(void **p, int n) {
 }
 
 static toml_arritem_t *expand_arritem(toml_arritem_t *p, int n) {
-	toml_arritem_t *pp = (toml_arritem_t*) expand(p, n * sizeof(*p), (n + 1) * sizeof(*p));
+	toml_arritem_t *pp = expand(p, n * sizeof(*p), (n + 1) * sizeof(*p));
 	if (!pp)
 		return 0;
 
@@ -1122,7 +1124,10 @@ static int walk_tabpath(context_t *ctx) {
 		toml_array_t *nextarr = 0;
 		toml_table_t *nexttab = 0;
 		switch (check_key(curtab, key, &nextval, &nextarr, &nexttab)) {
-			case 't': /// found a table. nexttab is where we will go next.
+			case 't': /// found a table. nexttab is where we will go next.)
+				// Next table is inline/readonly, so we can't go further.
+				if (nexttab->readonly)
+					return e_internal(ctx, FLINE);
 				break;
 			case 'a': /// found an array. nexttab is the last table in the array.
 				if (nextarr->kind != 't')
@@ -1484,6 +1489,16 @@ static int scan_time(const char *p, int *hh, int *mm, int *ss) {
 	return (hour >= 0 && minute >= 0 && second >= 0) ? 0 : -1;
 }
 
+static int scan_offset(const char *p, int *hh, int *mm) {
+	int hour = scan_digits(p, 2);
+	int minute = (hour >= 0 && p[2] == ':') ? scan_digits(p + 3, 2) : -1;
+	if (hh)
+		*hh = hour;
+	if (mm)
+		*mm = minute;
+	return (hour >= 0 && minute >= 0) ? 0 : -1;
+}
+
 static int scan_string(context_t *ctx, char *p, int lineno, bool dotisspecial) {
 	char *orig = p;
 
@@ -1805,31 +1820,17 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 
 		if (*p) { /// parse and copy Z
 			ret->kind = 'd';
-			char *z = ret->z;
-			ret->zdef = false;
+			ret->z.def = '\0';
 			if (*p == 'Z' || *p == 'z') {
-				*z++ = 'Z';
+				ret->z.def = 'Z';
 				p++;
-				*z = 0;
-				ret->zdef = true;
 			} else if (*p == '+' || *p == '-') {
-				*z++ = *p++;
-
-				if (!(isdigit(p[0]) && isdigit(p[1])))
-					return -1;
-				*z++ = *p++;
-				*z++ = *p++;
-
-				if (*p == ':') {
-					*z++ = *p++;
-					if (!(isdigit(p[0]) && isdigit(p[1])))
-						return -1;
-					*z++ = *p++;
-					*z++ = *p++;
+				ret->z.def = *p;
+				if (scan_offset(p + 1, &ret->z.hour, &ret->z.minute) == 0) {
+					if (ret->z.hour < -12 || ret->z.hour > 14 || ret->z.minute < 0 || ret->z.minute > 59) return -1;
+					ret->z.def = *p;
+					p += 6;
 				}
-
-				*z = 0;
-				ret->zdef = true;
 			}
 		}
 	}
@@ -1844,7 +1845,7 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 int toml_value_bool(toml_unparsed_t src, bool *ret_) {
 	if (!src)
 		return -1;
-	bool dummy = false;
+	bool dummy = 0.0;
 	bool *ret = ret_ ? ret_ : &dummy;
 
 	if (strcmp(src, "true") == 0) {
@@ -2115,7 +2116,7 @@ toml_value_t toml_table_timestamp(const toml_table_t *tbl, const char *key) {
 	memset(&ret, 0, sizeof(ret));
 	ret.ok = (toml_value_timestamp(toml_table_unparsed(tbl, key), &ts) == 0);
 	if (ret.ok) {
-		ret.ok = !!(ret.u.ts = (toml_timestampt_t) malloc(sizeof(*ret.u.ts)));
+		ret.ok = !!(ret.u.ts = malloc(sizeof(*ret.u.ts)));
 		if (ret.ok)
 			*ret.u.ts = ts;
 	}
