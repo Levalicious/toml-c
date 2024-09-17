@@ -34,6 +34,17 @@ static void print_escape_string(const char *s, int sl) {
 	}
 }
 
+static char* format_offset(toml_timestamp_t* t, char* buf) {
+	buf[0] = t->z.def;
+	if (t->z.def == 'Z') {
+		buf[1] = 0;
+	} else {
+		sprintf(buf + 1, "%02d:%02d", t->z.hour, t->z.minute);
+	}
+	buf[6] = 0;
+	return buf;
+}
+
 static void print_raw(const char *s) {
 	char *sval;
 	int slen;
@@ -41,6 +52,7 @@ static void print_raw(const char *s) {
 	bool bval;
 	double dval;
 	toml_timestamp_t ts;
+	char tmp[10];
 
 	if (toml_value_string(s, &sval, &slen) == 0) {
 		printf("{\"type\": \"string\",\"value\": \"");
@@ -61,9 +73,9 @@ static void print_raw(const char *s) {
 			millisec[0] = 0;
 		if (ts.kind == 'd' || ts.kind == 'l') {
 			printf("{\"type\": \"%s\",\"value\": \"%04d-%02d-%02dT%02d:%02d:%02d%s%s\"}",
-				(ts.z ? "datetime" : "datetime-local"),
+				(ts.z.def ? "datetime" : "datetime-local"),
 				ts.year, ts.month, ts.day, ts.hour, ts.minute, ts.second, millisec,
-				(ts.z ? ts.z : ""));
+				(ts.z.def ? format_offset(&ts, tmp) : ""));
 		} else if (ts.kind == 'D') {
 			printf("{\"type\": \"date-local\",\"value\": \"%04d-%02d-%02d\"}",
 				ts.year, ts.month, ts.day);

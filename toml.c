@@ -1359,6 +1359,16 @@ static int scan_time(const char *p, int *hh, int *mm, int *ss) {
 	return (hour >= 0 && minute >= 0 && second >= 0) ? 0 : -1;
 }
 
+static int scan_offset(const char *p, int *hh, int *mm) {
+	int hour = scan_digits(p, 2);
+	int minute = (hour >= 0 && p[2] == ':') ? scan_digits(p + 3, 2) : -1;
+	if (hh)
+		*hh = hour;
+	if (mm)
+		*mm = minute;
+	return (hour >= 0 && minute >= 0) ? 0 : -1;
+}
+
 static int scan_string(context_t *ctx, char *p, int lineno, bool dotisspecial) {
 	char *orig = p;
 
@@ -1667,8 +1677,7 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 
 	/// HH:MM:SS
 	if (scan_time(p, &ret->hour, &ret->minute, &ret->second) == 0) {
-		if (ret->second < 0 || ret->minute < 0 || ret->hour < 0 || ret->hour > 23 || ret->minute > 59 || ret->second > 60)
-			return -1;
+		if (ret->second < 0 || ret->minute < 0 || ret->hour < 0 || ret->hour > 23 || ret->minute > 59 || ret->second > 60) return -1;
 		ret->kind = (ret->kind == 'D' ? 'l' : 't');
 
 		p += 8;
@@ -1681,28 +1690,17 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 
 		if (*p) { /// parse and copy Z
 			ret->kind = 'd';
-			char *z = ret->z;
+			ret->z.def = '\0';
 			if (*p == 'Z' || *p == 'z') {
-				*z++ = 'Z';
+				ret->z.def = 'Z';
 				p++;
-				*z = 0;
 			} else if (*p == '+' || *p == '-') {
-				*z++ = *p++;
-
-				if (!(isdigit(p[0]) && isdigit(p[1])))
-					return -1;
-				*z++ = *p++;
-				*z++ = *p++;
-
-				if (*p == ':') {
-					*z++ = *p++;
-					if (!(isdigit(p[0]) && isdigit(p[1])))
-						return -1;
-					*z++ = *p++;
-					*z++ = *p++;
+				ret->z.def = *p;
+				if (scan_offset(p + 1, &ret->z.hour, &ret->z.minute) == 0) {
+					if (ret->z.hour < -12 || ret->z.hour > 14 || ret->z.minute < 0 || ret->z.minute > 59) return -1;
+					ret->z.def = *p;
+					p += 6;
 				}
-
-				*z = 0;
 			}
 		}
 	}
@@ -1717,7 +1715,7 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 int toml_value_bool(toml_unparsed_t src, bool *ret_) {
 	if (!src)
 		return -1;
-	bool dummy;
+	bool dummy = 0.0;
 	bool *ret = ret_ ? ret_ : &dummy;
 
 	if (strcmp(src, "true") == 0) {
@@ -1741,7 +1739,7 @@ int toml_value_int(toml_unparsed_t src, int64_t *ret_) {
 	char *q = p + sizeof(buf);
 	const char *s = src;
 	int base = 0;
-	int64_t dummy;
+	int64_t dummy = 0;
 	int64_t *ret = ret_ ? ret_ : &dummy;
 	bool have_sign = false;
 
@@ -1804,7 +1802,7 @@ int toml_value_double(toml_unparsed_t src, double *ret_) {
 	char *p = buf;
 	char *q = p + sizeof(buf);
 	const char *s = src;
-	double dummy;
+	double dummy = 0.0;
 	double *ret = ret_ ? ret_ : &dummy;
 	bool have_us = false;
 

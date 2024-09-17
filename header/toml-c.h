@@ -87,6 +87,7 @@ struct toml_timestamp_t {
 	int year, month, day;
 	int hour, minute, second, millisec;
 	char z[10];
+	bool zdef;
 };
 
 // toml_parse() parses a TOML document from a string. Returns 0 on error, with
@@ -151,7 +152,7 @@ static void *CALLOC(size_t nmemb, size_t sz) {
 #define strdup(x) error - forbidden - use STRDUP instead
 static char *STRDUP(const char *s) {
 	int len = strlen(s);
-	char *p = malloc(len + 1);
+	char *p = (char*) malloc(len + 1);
 	if (p) {
 		memcpy(p, s, len);
 		p[len] = 0;
@@ -161,10 +162,10 @@ static char *STRDUP(const char *s) {
 
 // some old platforms define strndup macro -- drop it.
 #undef strndup
-#define strndup(x) error - forbiden - use STRNDUP instead
+#define strndup(x) error - forbidden - use STRNDUP instead
 static char *STRNDUP(const char *s, size_t n) {
 	size_t len = strnlen(s, n);
-	char *p = malloc(len + 1);
+	char *p = (char*) malloc(len + 1);
 	if (p) {
 		memcpy(p, s, len);
 		p[len] = 0;
@@ -331,7 +332,7 @@ static void *expand(void *p, int sz, int newsz) {
 }
 
 static void **expand_ptrarr(void **p, int n) {
-	void **s = malloc((n + 1) * sizeof(void *));
+	void **s = (void**) malloc((n + 1) * sizeof(void *));
 	if (!s)
 		return 0;
 
@@ -344,7 +345,7 @@ static void **expand_ptrarr(void **p, int n) {
 }
 
 static toml_arritem_t *expand_arritem(toml_arritem_t *p, int n) {
-	toml_arritem_t *pp = expand(p, n * sizeof(*p), (n + 1) * sizeof(*p));
+	toml_arritem_t *pp = (toml_arritem_t*) expand(p, n * sizeof(*p), (n + 1) * sizeof(*p));
 	if (!pp)
 		return 0;
 
@@ -1791,8 +1792,7 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 
 	/// HH:MM:SS
 	if (scan_time(p, &ret->hour, &ret->minute, &ret->second) == 0) {
-		if (ret->second < 0 || ret->minute < 0 || ret->hour < 0 || ret->hour > 23 || ret->minute > 59 || ret->second > 60)
-			return -1;
+		if (ret->second < 0 || ret->minute < 0 || ret->hour < 0 || ret->hour > 23 || ret->minute > 59 || ret->second > 60) return -1;
 		ret->kind = (ret->kind == 'D' ? 'l' : 't');
 
 		p += 8;
@@ -1806,10 +1806,12 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 		if (*p) { /// parse and copy Z
 			ret->kind = 'd';
 			char *z = ret->z;
+			ret->zdef = false;
 			if (*p == 'Z' || *p == 'z') {
 				*z++ = 'Z';
 				p++;
 				*z = 0;
+				ret->zdef = true;
 			} else if (*p == '+' || *p == '-') {
 				*z++ = *p++;
 
@@ -1827,6 +1829,7 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 				}
 
 				*z = 0;
+				ret->zdef = true;
 			}
 		}
 	}
@@ -1841,7 +1844,7 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t *ret) {
 int toml_value_bool(toml_unparsed_t src, bool *ret_) {
 	if (!src)
 		return -1;
-	bool dummy;
+	bool dummy = false;
 	bool *ret = ret_ ? ret_ : &dummy;
 
 	if (strcmp(src, "true") == 0) {
@@ -1865,7 +1868,7 @@ int toml_value_int(toml_unparsed_t src, int64_t *ret_) {
 	char *q = p + sizeof(buf);
 	const char *s = src;
 	int base = 0;
-	int64_t dummy;
+	int64_t dummy = 0;
 	int64_t *ret = ret_ ? ret_ : &dummy;
 	bool have_sign = false;
 
@@ -1928,7 +1931,7 @@ int toml_value_double(toml_unparsed_t src, double *ret_) {
 	char *p = buf;
 	char *q = p + sizeof(buf);
 	const char *s = src;
-	double dummy;
+	double dummy = 0.0;
 	double *ret = ret_ ? ret_ : &dummy;
 	bool have_us = false;
 
@@ -2112,7 +2115,7 @@ toml_value_t toml_table_timestamp(const toml_table_t *tbl, const char *key) {
 	memset(&ret, 0, sizeof(ret));
 	ret.ok = (toml_value_timestamp(toml_table_unparsed(tbl, key), &ts) == 0);
 	if (ret.ok) {
-		ret.ok = !!(ret.u.ts = malloc(sizeof(*ret.u.ts)));
+		ret.ok = !!(ret.u.ts = (toml_timestampt_t) malloc(sizeof(*ret.u.ts)));
 		if (ret.ok)
 			*ret.u.ts = ts;
 	}
